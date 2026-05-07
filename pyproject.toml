@@ -1,0 +1,63 @@
+# chatwire-telegram — Telegram integration plugin for chatwire.
+#
+# Extracted from chatwire core at v0.7.0. Installs the TelegramIntegration
+# class as a chatwire.integrations entry point so chatwire discovers it
+# automatically on startup when `integrations.telegram.enabled: true` is set
+# in config.json.
+#
+# Install:   pip install chatwire-telegram
+#            pipx inject chatwire chatwire-telegram
+#
+# Dev:       pip install -e .[dev]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chatwire-telegram"
+version = "0.1.0"
+description = "Telegram integration plugin for chatwire"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Allen Bina" }]
+keywords = ["chatwire", "telegram", "imessage", "bridge", "plugin"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications :: Chat",
+]
+dependencies = [
+    "chatwire>=0.7.0",
+    "python-telegram-bot>=21.0,<22",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-asyncio"]
+
+[project.urls]
+Homepage = "https://github.com/allenbina/chatwire-telegram"
+Issues = "https://github.com/allenbina/chatwire-telegram/issues"
+
+# Register TelegramIntegration with the chatwire.integrations entry-point
+# group. chatwire's bridge discovers this at startup via:
+#   importlib.metadata.entry_points(group="chatwire.integrations")
+[project.entry-points."chatwire.integrations"]
+telegram = "chatwire_telegram:TelegramIntegration"
+
+[tool.setuptools.packages.find]
+include = ["chatwire_telegram*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
