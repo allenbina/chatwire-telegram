@@ -153,6 +153,10 @@ class TelegramIntegration:
         app.add_handler(MessageHandler(filters.COMMAND, self._cmd_slug))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text))
         app.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
+        app.add_handler(MessageHandler(
+            filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.VOICE,
+            self._handle_file,
+        ))
         app.add_handler(InlineQueryHandler(self._inline_whitelist))
 
         await app.initialize()
@@ -613,6 +617,73 @@ class TelegramIntegration:
         except Exception as e:
             log.exception("photo send failed")
             await msg.reply_text(f"photo send failed: {type(e).__name__}: {e}")
+        finally:
+            try:
+                tmp_path.unlink()
+            except FileNotFoundError:
+                pass
+
+    async def _handle_file(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Relay outbound document / video / audio / voice: Telegram → iMessage."""
+        if not self._authorized(update) or self._ctx is None:
+            await self._reject(update); return
+        msg = update.effective_message
+        caption = (msg.caption or "").strip()
+        if msg.reply_to_message and msg.reply_to_message.text:
+            rt = parse_reply_target(msg.reply_to_message.text)
+            if rt and rt.chat_name and not self._resolve_chat_tag(rt.chat_name):
+                await msg.reply_text(_UNRESOLVED_GROUP_HINT)
+                return
+        target, body = await self._resolve_target(update, caption)
+        if not target:
+            await msg.reply_text(
+                "No target. Reply to a relayed message, or include `/send <handle>` in the caption."
+            )
+            return
+
+        if msg.document:
+            file_id = msg.document.file_id
+            orig = msg.document.file_name or ""
+            suffix = Path(orig).suffix or ".bin"
+            kind = "document"
+        elif msg.video:
+            file_id = msg.video.file_id
+            suffix = ".mp4"
+            kind = "video"
+        elif msg.audio:
+            file_id = msg.audio.file_id
+            orig = msg.audio.file_name or ""
+            suffix = Path(orig).suffix or ".mp3"
+            kind = "audio"
+        elif msg.voice:
+            file_id = msg.voice.file_id
+            suffix = ".ogg"
+            kind = "voice"
+        else:
+            await msg.reply_text("Unsupported file type.")
+            return
+
+        tg_file = await context.bot.get_file(file_id)
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        try:
+            await tg_file.download_to_drive(custom_path=str(tmp_path))
+            r_file = await self._ctx.send_file(target, tmp_path)
+            self._remember_last_target(target)
+            self._ctx.mirror("outbound", kind=kind,
+                             handle=target.value if not target.is_group else "",
+                             chat_guid=target.value if target.is_group else None,
+                             text=body or None)
+            r_text: SendOutcome | None = None
+            if body:
+                r_text = await self._ctx.send_text(target, body)
+            rank = {"delivered": 0, "sent": 1, "pending": 2, "failed": 3}
+            outcomes = [o for o in (r_file, r_text) if o is not None]
+            worst = max(outcomes, key=lambda o: rank.get(o.status, 0))
+            await msg.reply_text(_format_send_reply(f"sent {kind}", target, worst))
+        except Exception as e:
+            log.exception("%s send failed", kind)
+            await msg.reply_text(f"{kind} send failed: {type(e).__name__}: {e}")
         finally:
             try:
                 tmp_path.unlink()
